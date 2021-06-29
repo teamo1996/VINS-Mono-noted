@@ -1,5 +1,4 @@
 #include "estimator.h"
-
 Estimator::Estimator(): f_manager{Rs}
 {
     ROS_INFO("init begins");

@@ -43,5 +43,5 @@ add_executable(pose_graph
     src/ThirdParty/VocabularyBinary.cpp
     )
 
-target_link_libraries(pose_graph ${catkin_LIBRARIES}  ${OpenCV_LIBS} ${CERES_LIBRARIES}) 
+target_link_libraries(pose_graph ${catkin_LIBRARIES}  ${OpenCV_LIBS} ${CERES_LIBRARIES} -lboost_system)
 # message("catkin_lib  ${catkin_LIBRARIES}")

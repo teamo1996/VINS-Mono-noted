@@ -50,17 +50,18 @@ void readParameters(ros::NodeHandle &n)
 
     fsSettings["image_topic"] >> IMAGE_TOPIC;
     fsSettings["imu_topic"] >> IMU_TOPIC;
-    MAX_CNT = fsSettings["max_cnt"];
-    MIN_DIST = fsSettings["min_dist"];
+    MAX_CNT = fsSettings["max_cnt"];            // 单帧图像的最大特征点数目
+    MIN_DIST = fsSettings["min_dist"];          // 特征点之间的最短像素距离（进行均匀化）
     ROW = fsSettings["image_height"];
     COL = fsSettings["image_width"];
-    FREQ = fsSettings["freq"];
-    F_THRESHOLD = fsSettings["F_threshold"];
+    FREQ = fsSettings["freq"];                  // 发布追踪结果的频率，一个好的估计至少需要10Hz，如果设置为0,则发布频率和图像频率一致
+    F_THRESHOLD = fsSettings["F_threshold"];    // 对极约束求解F矩阵时判断是否是内点的阈值
     SHOW_TRACK = fsSettings["show_track"];
-    EQUALIZE = fsSettings["equalize"];  // 是否做均衡化处理
-    FISHEYE = fsSettings["fisheye"];
+    EQUALIZE = fsSettings["equalize"];          // 是否做均衡化处理（主要为了避免图像太亮或者太暗，影响特征点的提取）
+    FISHEYE = fsSettings["fisheye"];            // 是否为鱼眼相机
     if (FISHEYE == 1)
         FISHEYE_MASK = VINS_FOLDER_PATH + "config/fisheye_mask.jpg";
+
     CAM_NAMES.push_back(config_file);
 
     WINDOW_SIZE = 20;

@@ -39,9 +39,11 @@ T readParam(ros::NodeHandle &n, std::string name)
     return ans;
 }
 
+// 读取配置文件，通过roslaunch传入到参数服务器，之后从参数服务器获得
 void readParameters(ros::NodeHandle &n)
 {
     std::string config_file;
+    // 首先获得配置文件的路径
     config_file = readParam<std::string>(n, "config_file");
     cv::FileStorage fsSettings(config_file, cv::FileStorage::READ);
     if(!fsSettings.isOpened())

@@ -442,6 +442,7 @@ PinholeCamera::liftSphere(const Eigen::Vector2d& p, Eigen::Vector3d& P) const
 
 /**
  * \brief Lifts a point from the image plane to its projective ray
+ * \brief 针孔相机去畸变
  *
  * \param p image coordinates
  * \param P coordinates of the projective ray
@@ -455,8 +456,8 @@ PinholeCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
 
     // Lift points to normalised plane
     // 投影到归一化相机坐标系
-    mx_d = m_inv_K11 * p(0) + m_inv_K13;
-    my_d = m_inv_K22 * p(1) + m_inv_K23;
+    mx_d = m_inv_K11 * p(0) + m_inv_K13;        // u/fx - cx/fx = (u - cx)/fx
+    my_d = m_inv_K22 * p(1) + m_inv_K23;        // v/fy - cy/fy = (v - cy)/fy
 
     if (m_noDistortion)
     {
@@ -491,16 +492,18 @@ PinholeCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
         // 参考https://github.com/HKUST-Aerial-Robotics/VINS-Mono/issues/48
         {
             // Recursive distortion model
+            // 迭代去畸变模型 基于畸变趋向于将点往中心拉，且越远离中心畸变越大
             int n = 8;
             Eigen::Vector2d d_u;
-            // 这里mx_d + du = 畸变后
+            // step1 根据pd计算pd-pu
             distortion(Eigen::Vector2d(mx_d, my_d), d_u);
-            // Approximate value
+            // 计算pu
             mx_u = mx_d - d_u(0);
             my_u = my_d - d_u(1);
 
             for (int i = 1; i < n; ++i)
             {
+                // step2 迭代计算pd - du = pu
                 distortion(Eigen::Vector2d(mx_u, my_u), d_u);
                 mx_u = mx_d - d_u(0);
                 my_u = my_d - d_u(1);
@@ -648,6 +651,7 @@ PinholeCamera::undistToPlane(const Eigen::Vector2d& p_u, Eigen::Vector2d& p) con
 void
 PinholeCamera::distortion(const Eigen::Vector2d& p_u, Eigen::Vector2d& d_u) const
 {
+    // du = pd - pu
     double k1 = mParameters.k1();
     double k2 = mParameters.k2();
     double p1 = mParameters.p1();
@@ -655,11 +659,11 @@ PinholeCamera::distortion(const Eigen::Vector2d& p_u, Eigen::Vector2d& d_u) cons
 
     double mx2_u, my2_u, mxy_u, rho2_u, rad_dist_u;
 
-    mx2_u = p_u(0) * p_u(0);
-    my2_u = p_u(1) * p_u(1);
-    mxy_u = p_u(0) * p_u(1);
-    rho2_u = mx2_u + my2_u;
-    rad_dist_u = k1 * rho2_u + k2 * rho2_u * rho2_u;
+    mx2_u = p_u(0) * p_u(0);                // x^2
+    my2_u = p_u(1) * p_u(1);                // y^2
+    mxy_u = p_u(0) * p_u(1);                // xy
+    rho2_u = mx2_u + my2_u;                             // r^2
+    rad_dist_u = k1 * rho2_u + k2 * rho2_u * rho2_u;    // (k1*r^2 + k2*r^4)
     d_u << p_u(0) * rad_dist_u + 2.0 * p1 * mxy_u + p2 * (rho2_u + 2.0 * mx2_u),
            p_u(1) * rad_dist_u + 2.0 * p2 * mxy_u + p1 * (rho2_u + 2.0 * my2_u);
 }
@@ -824,6 +828,7 @@ PinholeCamera::setParameters(const PinholeCamera::Parameters& parameters)
         m_noDistortion = false;
     }
 
+    // 为了去畸变时候的计算 TODO
     m_inv_K11 = 1.0 / mParameters.fx();
     m_inv_K13 = -mParameters.cx() / mParameters.fx();
     m_inv_K22 = 1.0 / mParameters.fy();
