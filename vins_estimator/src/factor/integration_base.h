@@ -1,5 +1,11 @@
 #pragma once
-
+/**
+ * @brief IMU预积分相关代码注释
+ *
+ *
+ *
+ *
+ */
 #include "../utility/utility.h"
 #include "../parameters.h"
 
@@ -10,14 +16,28 @@ class IntegrationBase
 {
   public:
     IntegrationBase() = delete;
+
+    /**
+     * @brief 预积分构造函数
+     *
+     * @param[in] _acc_0 b_k时刻的加速度值
+     * @param[in] _gyr_0 b_k时刻的陀螺仪值
+     * @param[in] _linearized_ba b_k时刻的加速度零偏
+     * @param[in] _linearized_bg b_k时刻的陀螺仪零偏
+     */
     IntegrationBase(const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
                     const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg)
         : acc_0{_acc_0}, gyr_0{_gyr_0}, linearized_acc{_acc_0}, linearized_gyr{_gyr_0},
           linearized_ba{_linearized_ba}, linearized_bg{_linearized_bg},
-            jacobian{Eigen::Matrix<double, 15, 15>::Identity()}, covariance{Eigen::Matrix<double, 15, 15>::Zero()},
-          sum_dt{0.0}, delta_p{Eigen::Vector3d::Zero()}, delta_q{Eigen::Quaterniond::Identity()}, delta_v{Eigen::Vector3d::Zero()}
+            jacobian{Eigen::Matrix<double, 15, 15>::Identity()},            // 预积分对零偏的雅各比
+            covariance{Eigen::Matrix<double, 15, 15>::Zero()},              // 预积分量的协方差矩阵
+          sum_dt{0.0},                                                            // 积分时间
+          delta_p{Eigen::Vector3d::Zero()},                                       // 预积分量
+          delta_q{Eigen::Quaterniond::Identity()},
+          delta_v{Eigen::Vector3d::Zero()}
 
     {
+        // 噪声项 18×18
         noise = Eigen::Matrix<double, 18, 18>::Zero();
         noise.block<3, 3>(0, 0) =  (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();
         noise.block<3, 3>(3, 3) =  (GYR_N * GYR_N) * Eigen::Matrix3d::Identity();
@@ -27,6 +47,9 @@ class IntegrationBase
         noise.block<3, 3>(15, 15) =  (GYR_W * GYR_W) * Eigen::Matrix3d::Identity();
     }
 
+    /**
+    * @brief 传入加速度计和陀螺仪的测量值并进行积分
+    */
     void push_back(double dt, const Eigen::Vector3d &acc, const Eigen::Vector3d &gyr)
     {
         // 相关时间差和传感器数据保留，方便后续repropagate
@@ -61,6 +84,9 @@ class IntegrationBase
             propagate(dt_buf[i], acc_buf[i], gyr_buf[i]);
     }
 
+    /**
+     * @brief 中值积分过
+     */
     void midPointIntegration(double _dt, 
                             const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
                             const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1,
@@ -69,17 +95,22 @@ class IntegrationBase
                             Eigen::Vector3d &result_delta_p, Eigen::Quaterniond &result_delta_q, Eigen::Vector3d &result_delta_v,
                             Eigen::Vector3d &result_linearized_ba, Eigen::Vector3d &result_linearized_bg, bool update_jacobian)
     {
-        //ROS_INFO("midpoint integration");
+
         // 首先中值积分更新状态量
-        Vector3d un_acc_0 = delta_q * (_acc_0 - linearized_ba);
-        Vector3d un_gyr = 0.5 * (_gyr_0 + _gyr_1) - linearized_bg;
-        result_delta_q = delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, un_gyr(1) * _dt / 2, un_gyr(2) * _dt / 2);
-        Vector3d un_acc_1 = result_delta_q * (_acc_1 - linearized_ba);
-        Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-        result_delta_p = delta_p + delta_v * _dt + 0.5 * un_acc * _dt * _dt;
-        result_delta_v = delta_v + un_acc * _dt;
-        result_linearized_ba = linearized_ba;
-        result_linearized_bg = linearized_bg;         
+        Vector3d un_acc_0 = delta_q * (_acc_0 - linearized_ba);             // 上一时刻的无偏加速度计值
+        Vector3d un_gyr = 0.5 * (_gyr_0 + _gyr_1) - linearized_bg;          // 两帧之间的陀螺仪均值
+        // TODO 为什么归一化不在这里做
+        result_delta_q = delta_q * Quaterniond(1,                        // 当前时刻的姿态
+                                               un_gyr(0) * _dt / 2,
+                                               un_gyr(1) * _dt / 2,
+                                               un_gyr(2) * _dt / 2);
+        Vector3d un_acc_1 = result_delta_q * (_acc_1 - linearized_ba);      // 当前时刻的无偏加速度计值
+        Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);                      // 两帧之间的加速度计均值
+        result_delta_p = delta_p + delta_v * _dt + 0.5 * un_acc * _dt * _dt;// 当前时刻的位置
+        result_delta_v = delta_v + un_acc * _dt;                            // 当前时刻的速度
+        result_linearized_ba = linearized_ba;                               // 零偏保持不变
+        result_linearized_bg = linearized_bg;
+
         // 随后更新方差矩阵及雅克比
         if(update_jacobian)
         {
@@ -88,9 +119,10 @@ class IntegrationBase
             Vector3d a_1_x = _acc_1 - linearized_ba;
             Matrix3d R_w_x, R_a_0_x, R_a_1_x;
 
-            R_w_x<<0, -w_x(2), w_x(1),
-                w_x(2), 0, -w_x(0),
-                -w_x(1), w_x(0), 0;
+            // 提前计算需要的反对称矩阵
+            R_w_x<<0,             -w_x(2), w_x(1),
+                   w_x(2),  0,            -w_x(0),
+                   -w_x(1), w_x(0),  0;
             R_a_0_x<<0, -a_0_x(2), a_0_x(1),
                 a_0_x(2), 0, -a_0_x(0),
                 -a_0_x(1), a_0_x(0), 0;
@@ -100,47 +132,70 @@ class IntegrationBase
 
             MatrixXd F = MatrixXd::Zero(15, 15);
             F.block<3, 3>(0, 0) = Matrix3d::Identity();
+            // f01
             F.block<3, 3>(0, 3) = -0.25 * delta_q.toRotationMatrix() * R_a_0_x * _dt * _dt + 
                                   -0.25 * result_delta_q.toRotationMatrix() * R_a_1_x * (Matrix3d::Identity() - R_w_x * _dt) * _dt * _dt;
+            // delta_t
             F.block<3, 3>(0, 6) = MatrixXd::Identity(3,3) * _dt;
+            // f03
             F.block<3, 3>(0, 9) = -0.25 * (delta_q.toRotationMatrix() + result_delta_q.toRotationMatrix()) * _dt * _dt;
+            // f04 注意最后一个_dt带负号
             F.block<3, 3>(0, 12) = -0.25 * result_delta_q.toRotationMatrix() * R_a_1_x * _dt * _dt * -_dt;
+            // f11
             F.block<3, 3>(3, 3) = Matrix3d::Identity() - R_w_x * _dt;
+            // -delta_t
             F.block<3, 3>(3, 12) = -1.0 * MatrixXd::Identity(3,3) * _dt;
+            // f21
             F.block<3, 3>(6, 3) = -0.5 * delta_q.toRotationMatrix() * R_a_0_x * _dt + 
                                   -0.5 * result_delta_q.toRotationMatrix() * R_a_1_x * (Matrix3d::Identity() - R_w_x * _dt) * _dt;
+            //
             F.block<3, 3>(6, 6) = Matrix3d::Identity();
+            // f23
             F.block<3, 3>(6, 9) = -0.5 * (delta_q.toRotationMatrix() + result_delta_q.toRotationMatrix()) * _dt;
+            // f24 注意最后一个_dt带负号
             F.block<3, 3>(6, 12) = -0.5 * result_delta_q.toRotationMatrix() * R_a_1_x * _dt * -_dt;
+            //
             F.block<3, 3>(9, 9) = Matrix3d::Identity();
             F.block<3, 3>(12, 12) = Matrix3d::Identity();
-            //cout<<"A"<<endl<<A<<endl;
 
+            // 注意，，这里跟加速度计噪声相关的项都与公式中差了一个负号
             MatrixXd V = MatrixXd::Zero(15,18);
+            // v00 与公式中差了一个负号 但是因为是白噪声，不影响结果
             V.block<3, 3>(0, 0) =  0.25 * delta_q.toRotationMatrix() * _dt * _dt;
+            // v01 与公式中差了一个负号 但是因为是白噪声，不影响结果
             V.block<3, 3>(0, 3) =  0.25 * -result_delta_q.toRotationMatrix() * R_a_1_x  * _dt * _dt * 0.5 * _dt;
+            // v02 与公式中差了一个负号 但是因为是白噪声，不影响结果
             V.block<3, 3>(0, 6) =  0.25 * result_delta_q.toRotationMatrix() * _dt * _dt;
+            // v03 = v01
             V.block<3, 3>(0, 9) =  V.block<3, 3>(0, 3);
+            //
             V.block<3, 3>(3, 3) =  0.5 * MatrixXd::Identity(3,3) * _dt;
+            //
             V.block<3, 3>(3, 9) =  0.5 * MatrixXd::Identity(3,3) * _dt;
+            //
             V.block<3, 3>(6, 0) =  0.5 * delta_q.toRotationMatrix() * _dt;
+            // v21 与公式中差了一个负号 但是因为是白噪声，不影响结果
             V.block<3, 3>(6, 3) =  0.5 * -result_delta_q.toRotationMatrix() * R_a_1_x  * _dt * 0.5 * _dt;
+            //
             V.block<3, 3>(6, 6) =  0.5 * result_delta_q.toRotationMatrix() * _dt;
+            // v23 = v21
             V.block<3, 3>(6, 9) =  V.block<3, 3>(6, 3);
+            // 与公式一致
             V.block<3, 3>(9, 12) = MatrixXd::Identity(3,3) * _dt;
             V.block<3, 3>(12, 15) = MatrixXd::Identity(3,3) * _dt;
 
-            //step_jacobian = F;
-            //step_V = V;
+            // 更新雅各比和协方差矩阵
             jacobian = F * jacobian;
             covariance = F * covariance * F.transpose() + V * noise * V.transpose();
         }
 
     }
-
+    /**
+     * @brief 误差传播过程
+     */
     void propagate(double _dt, const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1)
     {
-        dt = _dt;
+        dt = _dt;                       // 距离上一帧数据之间的时间差
         acc_1 = _acc_1;
         gyr_1 = _gyr_1;
         Vector3d result_delta_p;
@@ -201,6 +256,7 @@ class IntegrationBase
     Eigen::Vector3d acc_0, gyr_0;
     Eigen::Vector3d acc_1, gyr_1;
 
+    // 保存b_k时刻的加速度计，陀螺仪以及零偏值
     const Eigen::Vector3d linearized_acc, linearized_gyr;
     Eigen::Vector3d linearized_ba, linearized_bg;
 

@@ -212,7 +212,7 @@ int main() {
     drawPoints(img,vins_undist,cv::Scalar(255,255,255),7);
     std::cout << "vins undistort cost :" << t_vins.toc() << std::endl;
 
-    cv::imshow("original",img);
+    cv::imshow("compare",img);
 
     float opencv_error = 0;
     float vins_error = 0 ;
